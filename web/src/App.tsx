@@ -69,7 +69,12 @@ export function App() {
     <PersistQueryClientProvider
       client={queryClient}
       persistOptions={persistOptions}
-      onSuccess={() => void queryClient.resumePausedMutations()}
+      onSuccess={() => {
+        // The restored `me` may predate the last write (the persister is throttled), so re-check it once
+        // in the background; the restored copy still renders instantly and keeps working offline.
+        void queryClient.invalidateQueries({ queryKey: qk.me });
+        void queryClient.resumePausedMutations();
+      }}
     >
       <FeedbackProvider>
         <RouterProvider router={router} />

@@ -216,7 +216,7 @@ describe('coach post-processing (unit)', () => {
       return String(url).includes('/models/gemini-dead:') ? new Response('{}', { status: 404 }) : geminiOk({ ok: true });
     }) as unknown as typeof fetch;
     const g = createGemini({ apiKey: KEY, model: 'gemini-dead', fetch: fetchMock });
-    expect(await g.generateJson({ system: 's', prompt: 'p', schema: {} })).toEqual({ data: { ok: true }, model: 'gemini-flash-latest' });
+    expect(await g.generateJson({ system: 's', prompt: 'p', schema: {} })).toEqual({ data: { ok: true }, model: 'gemini-3.5-flash' });
     await g.generateJson({ system: 's', prompt: 'p', schema: {} });
     expect(calls.filter((u) => u.includes('gemini-dead'))).toHaveLength(1);
   });
@@ -228,6 +228,49 @@ describe('coach post-processing (unit)', () => {
       })) as unknown as typeof fetch;
     const g = createGemini({ apiKey: KEY, model: 'm', fetch: fetchMock, timeoutMs: 30 });
     await expect(g.generateJson({ system: 's', prompt: 'p', schema: {} })).rejects.toMatchObject({ status: 504, code: 'ai_unavailable' });
+  });
+
+  it('gemini client falls through overloaded (503) and rate-limited (429) models, but retries them next call', async () => {
+    const calls: string[] = [];
+    let overloaded = true;
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      const u = String(url);
+      calls.push(u);
+      if (overloaded && u.includes('/models/gemini-3.5-flash:')) return new Response('{"error":{"code":503}}', { status: 503 });
+      if (overloaded && u.includes('/models/gemini-3.1-flash-lite:')) return new Response('{"error":{"code":429}}', { status: 429 });
+      return geminiOk({ ok: true });
+    }) as unknown as typeof fetch;
+    const g = createGemini({ apiKey: KEY, model: 'gemini-3.5-flash', fetch: fetchMock });
+    expect(await g.generateJson({ system: 's', prompt: 'p', schema: {} })).toEqual({ data: { ok: true }, model: 'gemini-flash-lite-latest' });
+    overloaded = false;
+    // Transient failures are not remembered as dead: the preferred model is tried first again.
+    expect((await g.generateJson({ system: 's', prompt: 'p', schema: {} })).model).toBe('gemini-3.5-flash');
+    expect(calls).toHaveLength(4);
+  });
+
+  it('gemini client does not fall back to another model on a 400 (bad request / key)', async () => {
+    const fetchMock = vi.fn(async () => new Response('{"error":{"code":400}}', { status: 400 })) as unknown as typeof fetch;
+    const g = createGemini({ apiKey: KEY, model: 'gemini-custom', fetch: fetchMock });
+    await expect(g.generateJson({ system: 's', prompt: 'p', schema: {} })).rejects.toMatchObject({ status: 502 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('gemini client asks for minimal thinking, and drops it for a model that rejects it', async () => {
+    const bodies: Array<{ model: string; gen: Record<string, unknown> }> = [];
+    const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const model = /models\/([^:]+):/.exec(String(url))?.[1] ?? '';
+      const gen = JSON.parse(String(init?.body)).generationConfig;
+      bodies.push({ model, gen });
+      return gen.thinkingConfig ? new Response('{"error":{"code":400}}', { status: 400 }) : geminiOk({ ok: true });
+    }) as unknown as typeof fetch;
+    const g = createGemini({ apiKey: KEY, model: 'gemini-3.5-flash', fetch: fetchMock });
+    expect((await g.generateJson({ system: 's', prompt: 'p', schema: {} })).model).toBe('gemini-3.5-flash');
+    expect(bodies[0]!.gen.thinkingConfig).toEqual({ thinkingLevel: 'minimal' });
+    expect(bodies[1]!.gen.thinkingConfig).toBeUndefined();
+    // remembered: the next call goes straight out without it
+    await g.generateJson({ system: 's', prompt: 'p', schema: {} });
+    expect(bodies).toHaveLength(3);
+    expect(bodies[2]!.gen.thinkingConfig).toBeUndefined();
   });
 });
 
@@ -443,10 +486,10 @@ describe('POST /api/coach/review', () => {
     const c = await signedIn(app);
     const res = await c.post('/api/coach/ask', { question: 'How long should I rest between sets?' });
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ answer: 'Ok.', model: 'gemini-flash-latest' });
+    expect(res.body).toEqual({ answer: 'Ok.', model: 'gemini-3.5-flash' });
     expect(gem.calls.map((x) => x.url.split('/models/')[1])).toEqual([
       'gemini-gone:generateContent',
-      'gemini-flash-latest:generateContent',
+      'gemini-3.5-flash:generateContent',
     ]);
   });
 });

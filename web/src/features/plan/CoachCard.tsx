@@ -11,14 +11,17 @@ import { Button, Card, Skeleton } from '../../components/ui';
 import { useToast } from '../../components/feedback';
 import { RecommendationItem } from './RecommendationItem';
 
-type Blocked = { kind: 'unavailable' } | { kind: 'rate'; until: number } | null;
+type Blocked = { kind: 'rate'; until: number } | null;
 
 function useCoachErrors() {
   const [blocked, setBlocked] = useState<Blocked>(null);
   const toast = useToast();
   const handle = (e: unknown) => {
-    if (e instanceof ApiRequestError && (e.status === 503 || e.code === 'ai_unavailable')) setBlocked({ kind: 'unavailable' });
-    else if (e instanceof ApiRequestError && e.status === 429) setBlocked({ kind: 'rate', until: Date.now() + (e.retryAfterSec ?? 60) * 1000 });
+    if (e instanceof ApiRequestError && e.status === 429) setBlocked({ kind: 'rate', until: Date.now() + (e.retryAfterSec ?? 60) * 1000 });
+    // "Not configured" comes from /api/coach/status (refetched after every attempt). An ai_unavailable error
+    // while enabled is transient — model overloaded or slow — so say so and keep the coach usable.
+    else if (e instanceof ApiRequestError && e.code === 'ai_unavailable')
+      toast.error(e.message || 'The coach is busy right now. Try again in a moment.');
     else toast.error(errorMessage(e, 'The coach is unavailable right now'));
   };
   return { blocked, setBlocked, handle };
@@ -181,7 +184,7 @@ export function CoachCard() {
   const [generating, setGenerating] = useState(false);
   const countdown = useCountdown(blocked?.kind === 'rate' ? blocked.until : null);
   const rateLimited = blocked?.kind === 'rate' && countdown > 0;
-  const unavailable = blocked?.kind === 'unavailable' || status?.enabled === false;
+  const unavailable = status?.enabled === false;
   const outOfCalls = status?.enabled && status.remainingToday <= 0;
   const disabled = unavailable || rateLimited || !!outOfCalls || !online;
 

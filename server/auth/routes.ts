@@ -34,7 +34,19 @@ export function authRouter(ctx: AppContext): Router {
     },
   });
 
-  r.post('/register', async (req, res) => {
+  const registerLimiter = rateLimit({
+    windowMs: ctx.config.registerRateLimit.windowMs,
+    limit: ctx.config.registerRateLimit.limit,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    handler: (req, res) => {
+      const reset = (req as typeof req & { rateLimit?: RateLimitInfo }).rateLimit?.resetTime?.getTime();
+      const retry = reset ? (reset - Date.now()) / 1000 : ctx.config.registerRateLimit.windowMs / 1000;
+      sendError(res, rateLimited('Too many sign-ups from this network. Try again later.', retry));
+    },
+  });
+
+  r.post('/register', registerLimiter, async (req, res) => {
     const body = parse(registerSchema, req.body);
     if (await findUserByEmail(ctx.db, body.email)) throw conflict('An account with this email already exists');
     const passwordHash = await bcrypt.hash(body.password, ctx.config.bcryptCost);

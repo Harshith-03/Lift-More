@@ -19,6 +19,8 @@ export interface AppConfig {
   gemini: GeminiConfig;
   /** Login brute-force limit per IP. */
   loginRateLimit: { windowMs: number; limit: number };
+  /** Sign-up limit per IP (bcrypt hashing is CPU-heavy, so unbounded sign-ups are a DoS vector). */
+  registerRateLimit: { windowMs: number; limit: number };
   bcryptCost: number;
   sessionTtlDays: number;
   /** Renew the session when fewer than this many days remain. */
@@ -42,12 +44,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, overrides: Part
     staticDir: undefined,
     gemini: {
       apiKey,
-      model: env.GEMINI_MODEL?.trim() || 'gemini-flash-latest',
+      model: env.GEMINI_MODEL?.trim() || 'gemini-3.5-flash',
       rpm: int(env.GEMINI_RPM, 15),
       userDailyLimit: int(env.GEMINI_USER_DAILY_LIMIT, 30),
-      timeoutMs: 25_000,
+      // Per model attempt; one call may fall back through up to 3 models within 2.5× this.
+      timeoutMs: 20_000,
     },
     loginRateLimit: { windowMs: 15 * 60 * 1000, limit: 10 },
+    registerRateLimit: { windowMs: 60 * 60 * 1000, limit: int(env.REGISTER_RATE_LIMIT, 20) },
     bcryptCost: 10,
     sessionTtlDays: 30,
     sessionRenewBelowDays: 15,

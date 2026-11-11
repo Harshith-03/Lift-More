@@ -39,9 +39,17 @@ export const persistOptions: PersistQueryClientProviderProps['persistOptions'] =
   },
 };
 
-/** Wipe all cached server data (logout / account switch / delete). */
+/**
+ * Wipe all cached server data (logout / account switch / delete).
+ *
+ * The `me` query instance is kept on purpose: AuthGate's mounted observer is attached to it, and
+ * `queryClient.clear()` would orphan that observer — the caller's follow-up `setQueryData(qk.me, …)`
+ * would then land on a brand-new query nobody is subscribed to, leaving the UI stuck on the old screen.
+ * Callers always overwrite `me` right after this.
+ */
 export function clearCachedData(): void {
-  queryClient.clear();
+  queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== qk.me[0] });
+  queryClient.getMutationCache().clear();
   removeKey(STORAGE_KEYS.queryCache);
 }
 

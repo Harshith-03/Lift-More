@@ -6,6 +6,7 @@ import { kgToUnit } from '../../../../shared/engine';
 import { NumericInput } from '../../components/NumericInput';
 import { inputToKg, roundTo } from '../../lib/format';
 import { formatPrevious } from './previous';
+import { tickFill } from './tickFill';
 import type { DraftSet, SetPatch } from './draftReducer';
 
 // narrow phones (360 px) get slightly slimmer number columns so "Previous" stays readable
@@ -78,16 +79,8 @@ export const SetRow = memo(function SetRow({
     });
   };
 
-  const tick = () => {
-    // ticking an empty set fills it from the target / last session first
-    let fill: SetPatch | null = null;
-    if (!set.completed && repsValue == null) {
-      const v = targetReps ?? prevValue;
-      if (v != null) fill = isDuration ? { durationSec: v } : { reps: v };
-      if (set.weightKg == null && previous?.weightKg != null && tracking === 'weight_reps') fill = { ...fill, weightKg: previous.weightKg };
-    }
-    onToggle(set, fill);
-  };
+  // Ticking logs what the row shows: empty fields take their placeholder values (target / last session).
+  const tick = () => onToggle(set, tickFill(set, { tracking, targetReps, previous }));
 
   return (
     <div

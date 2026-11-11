@@ -23,7 +23,7 @@ services:
       - key: APP_ORIGIN
         sync: false
       - key: GEMINI_MODEL
-        value: gemini-flash-latest
+        value: gemini-3.5-flash
       - key: GEMINI_RPM
         value: "15"
       - key: GEMINI_USER_DAILY_LIMIT

@@ -146,6 +146,26 @@ describe('auth', () => {
       expect((await new Client(app).post('/api/auth/login', { email, password })).status).toBe(200);
     }
   });
+
+  it('rate-limits sign-ups per IP (REGISTER_RATE_LIMIT), then 429 with retryAfterSec', async () => {
+    const { app } = await makeApp({ db, env: { REGISTER_RATE_LIMIT: '3' } });
+    for (let i = 0; i < 3; i++) {
+      const r = await new Client(app).post('/api/auth/register', {
+        email: uniqueEmail(`signup-${i}`),
+        password: 'hunter2hunter2',
+        displayName: 'Ada',
+      });
+      expect(r.status).toBe(201);
+    }
+    const blocked = await new Client(app).post('/api/auth/register', {
+      email: uniqueEmail('signup-blocked'),
+      password: 'hunter2hunter2',
+      displayName: 'Ada',
+    });
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.error).toBe('rate_limited');
+    expect(blocked.body.retryAfterSec).toBeGreaterThan(0);
+  });
 });
 
 describe('session cookie', () => {
