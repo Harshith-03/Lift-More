@@ -1,0 +1,30 @@
+# Render Blueprint — one free web service serving the SPA + /api (same origin).
+# Postgres lives on Neon: paste its connection string (with ?sslmode=require) into DATABASE_URL.
+services:
+  - type: web
+    name: lift-more
+    runtime: node
+    plan: free
+    # Same AWS region as the Neon database (aws-us-east-1) to keep query latency low.
+    region: virginia
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: APP_ORIGIN
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-flash-latest
+      - key: GEMINI_RPM
+        value: "15"
+      - key: GEMINI_USER_DAILY_LIMIT
+        value: "30"
